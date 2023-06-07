@@ -1,7 +1,4 @@
-use std::{
-    fs::canonicalize,
-    path::{Path, PathBuf},
-};
+use std::{fs::canonicalize, path::PathBuf};
 
 use anyhow::{bail, Context};
 use clap::Parser;

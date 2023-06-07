@@ -1,66 +1,28 @@
 pub mod cli;
+pub mod message;
 
 use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use futures::TryStreamExt;
 use pulsar::{
-    consumer::InitialPosition, producer, Authentication, ConnectionRetryOptions, Consumer,
-    ConsumerOptions, DeserializeMessage, Error as PulsarError, OperationRetryOptions, Pulsar,
-    SerializeMessage, SubType, TokioExecutor,
-};
-// #[macro_use]
-use serde::{Deserialize, Serialize};
-
-use sozu_command_lib::{
-    channel::Channel,
-    command::{CommandRequest, CommandResponse},
-    config::{Config, FileConfig},
+    consumer::InitialPosition, Authentication, ConnectionRetryOptions, Consumer, ConsumerOptions,
+    OperationRetryOptions, Pulsar, SubType, TokioExecutor,
 };
 use tracing::{error, info};
 
-use crate::cli::Args;
+use sozu_command_lib::{
+    channel::Channel,
+    proto::command::{Request, Response},
+};
 
-/// a wrapper arount sozu's CommandRequest, so we can serialize it
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RequestMessage(pub CommandRequest);
-
-impl SerializeMessage for RequestMessage {
-    fn serialize_message(input: Self) -> Result<producer::Message, PulsarError> {
-        let payload =
-            serde_json::to_vec(&input.0).map_err(|e| PulsarError::Custom(e.to_string()))?;
-        Ok(producer::Message {
-            payload,
-            ..Default::default()
-        })
-    }
-}
-
-// TODO: this should be done in sozu_command_lib instead
-/// a wrapper around sozu's CommandResponse, so we can deserialize it
-#[derive(Serialize, Deserialize)]
-struct ResponseMessage(CommandResponse);
-
-impl DeserializeMessage for ResponseMessage {
-    type Output = Result<ResponseMessage, serde_json::Error>;
-    fn deserialize_message(payload: &pulsar::Payload) -> Self::Output {
-        serde_json::from_slice(&payload.data)
-    }
-}
-
-impl DeserializeMessage for RequestMessage {
-    type Output = Result<RequestMessage, serde_json::Error>;
-
-    fn deserialize_message(payload: &pulsar::Payload) -> Self::Output {
-        Ok(RequestMessage(serde_json::from_slice(&payload.data)?))
-    }
-}
+use crate::{cli::Args, message::RequestMessage};
 
 /// A simple connector that consumes Sōzu request messages on a pulsar topic
 /// and writes them to a Sōzu instance
 pub struct PulsarConnector {
     pulsar_consumer: Consumer<RequestMessage, TokioExecutor>,
-    sozu_channel: Channel<CommandRequest, CommandResponse>,
+    sozu_channel: Channel<Request, Response>,
 }
 
 impl PulsarConnector {
@@ -137,10 +99,7 @@ impl PulsarConnector {
             let command_request = message.0;
 
             match self.write_command_to_sozu(command_request.clone()).await {
-                Ok(()) => info!(
-                    "Command request {} successfully written to Sōzu",
-                    command_request.id
-                ),
+                Ok(()) => info!("Command request successfully written to Sōzu",),
                 Err(write_error) => info!("Error writing command to sozu: {:#}", write_error),
             }
         }
@@ -148,10 +107,7 @@ impl PulsarConnector {
         Ok(())
     }
 
-    async fn write_command_to_sozu(
-        &mut self,
-        command_request: CommandRequest,
-    ) -> anyhow::Result<()> {
+    async fn write_command_to_sozu(&mut self, command_request: Request) -> anyhow::Result<()> {
         self.sozu_channel
             .write_message(&command_request)
             .with_context(|| "Could not write the request")
