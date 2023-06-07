@@ -1,12 +1,10 @@
-use std::{any, env};
-
 use anyhow::Context;
 use envconfig::Envconfig;
 use pulsar::{Authentication, Pulsar, TokioExecutor};
-use sozu_command_lib::command::{CommandRequest, CommandRequestOrder};
+use sozu_command_lib::proto::command::{request::RequestType, Request, Status};
 use tracing::{debug, info};
 
-use sozu_pulsar_connector::RequestMessage;
+use sozu_pulsar_connector::message::RequestMessage;
 
 #[derive(Envconfig, Debug)]
 struct Config {
@@ -98,7 +96,11 @@ async fn main() -> anyhow::Result<()> {
         .await
         .with_context(|| "Could not create request sender")?;
 
-    let request = CommandRequest::new("some-id".into(), CommandRequestOrder::Status, None);
+    let request = Request {
+        request_type: Some(RequestType::Status(Status {})),
+    };
+
+    info!("Creating request {:?}", request);
 
     request_sender.send_request(RequestMessage(request)).await?;
 

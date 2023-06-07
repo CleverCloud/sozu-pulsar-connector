@@ -1,6 +1,8 @@
 # Pulsar Connector
 
-This little library provides a pulsar client that listen on a topic where
+This little library provides a pulsar connector for [Sōzu](https://github.com/sozu-proxy/sozu).
+
+It contains a client that listen on a topic where
 Sōzu commands will be written, and writes these commands on the UNIX socket
 of the main process, for execution.
 
@@ -17,14 +19,14 @@ cargo run -- \
 More easily, copy the example env file into `.env`,
 
 ```
-mv .env.example .env
+cp .env.example .env
 ```
 
 Tune the values, source the file, launch the connector by doing:
 
 ```
 source .env
-cargo run -- --pulsar-url $PULSAR_URL --token $PULSAR_TOKEN --topic $PULSAR_TOPIC --config <PATH_TO_CONFIG>
+cargo run -- --pulsar-url $PULSAR_URL --token $PULSAR_TOKEN --topic $PULSAR_TOPIC --config $SOZU_CONFIG
 ```
 
 ## Test
