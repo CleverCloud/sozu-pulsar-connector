@@ -1572,9 +1572,9 @@ dependencies = [
 
 [[package]]
 name = "pulsar"
-version = "5.0.2"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd45f0d3c32ca8be8344f00e01aa87ab4f98659fda0be0b82e7efb41855633d1"
+checksum = "06fbacec81fe6fb82f076279c3aaeb05324478f62c3074f13ecd0452cbec27b2"
 dependencies = [
  "async-native-tls",
  "async-std",
