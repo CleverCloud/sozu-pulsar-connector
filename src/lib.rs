@@ -9,7 +9,7 @@ use pulsar::{
     consumer::InitialPosition, Authentication, ConnectionRetryOptions, Consumer, ConsumerOptions,
     OperationRetryOptions, Pulsar, SubType, TokioExecutor,
 };
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use sozu_command_lib::{
     channel::Channel,
@@ -94,13 +94,18 @@ impl PulsarConnector {
                 }
             };
 
-            info!("receive message: {:?}", message);
+            info!("received message: {:?}", message);
 
-            let command_request = message.0;
+            let command_request = message.0.clone();
 
             match self.write_command_to_sozu(command_request.clone()).await {
-                Ok(()) => info!("Command request successfully written to Sōzu",),
-                Err(write_error) => info!("Error writing command to sozu: {:#}", write_error),
+                Ok(()) => info!("Command request successfully written to Sōzu"),
+                Err(write_error) => error!("Error writing request to sozu: {:#}", write_error),
+            }
+
+            debug!("acknowledging message {:?}", message);
+            if let Err(e) = self.pulsar_consumer.ack(&msg).await {
+                error!("Could not acknowledge message {}", e);
             }
         }
 
@@ -110,6 +115,6 @@ impl PulsarConnector {
     async fn write_command_to_sozu(&mut self, command_request: Request) -> anyhow::Result<()> {
         self.sozu_channel
             .write_message(&command_request)
-            .with_context(|| "Could not write the request")
+            .with_context(|| "Channel write error")
     }
 }
