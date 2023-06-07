@@ -1,6 +1,6 @@
 [package]
 name = "sozu-pulsar-connector"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Emmanuel Bosquet <emmanuel.bosquet@clever-cloud.com>"]
 
