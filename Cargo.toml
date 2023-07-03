@@ -13,7 +13,7 @@ path-absolutize = "^3.0.14"
 pulsar = "^6.0.0"
 serde = { version = "^1.0.148", features = ["derive"] }
 serde_json = "^1.0.89"
-sozu-command-lib = "^0.14.3"
+sozu-command-lib = "^0.15.0"
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 tracing = "^0.1.37"
 tracing-subscriber = "^0.3.16"
