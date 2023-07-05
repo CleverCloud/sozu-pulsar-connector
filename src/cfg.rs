@@ -72,6 +72,19 @@ impl Sozu {
     }
 }
 
+/// Batching-related configuration
+#[derive(Serialize, Deserialize, Eq, PartialEq, Clone, Debug)]
+pub struct Batch {
+    /// Absolute path to the emporary directory in which the JSON requests will be batched
+    pub temp_dir: String,
+    /// limit to the number of requests in a batch
+    pub max_requests: u64,
+    /// limit to the size of a batch, (in bytes)
+    pub max_size: u64,
+    // Duration between batches, in seconds
+    pub interval: u64,
+}
+
 /// Pulsar-related configuration
 #[derive(Serialize, Deserialize, Eq, PartialEq, Clone, Debug)]
 pub struct Pulsar {
@@ -90,6 +103,8 @@ pub struct Configuration {
     pub sozu: Sozu,
     /// Pulsar-related configuration (broker URL, topic, authentication)
     pub pulsar: Pulsar,
+    /// various caps to a batch, such as size and duration
+    pub batch: Batch,
 }
 
 impl TryFrom<String> for Configuration {

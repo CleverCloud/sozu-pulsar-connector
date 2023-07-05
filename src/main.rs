@@ -1,7 +1,7 @@
 use anyhow::Context;
 use clap::Parser;
 
-use sozu_pulsar_connector::{cli::Args, PulsarConnector, cfg::Configuration};
+use sozu_pulsar_connector::{cfg::Configuration, cli::Args, PulsarConnector};
 use tracing::info;
 
 #[tokio::main]
@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| "Could not create the pulsar connector")?;
 
     pulsar_connector
-        .run()
+        .run_with_batching()
         .await
         .with_context(|| "The pulsar connector got interrupted")?;
 

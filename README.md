@@ -9,7 +9,14 @@ of the Sōzu main process, for execution.
 
 ## How to run
 
-Tune the `config.toml` to your pulsar broker and your Sōzu instance, and do:
+Copy the `example.config.toml` to be a `config.toml`:
+
+```
+cp example.config.toml config.toml
+```
+
+
+Tune the values to match the credentials of your pulsar broker, and to link to your Sōzu instance, and do:
 
 ```
 cargo run -- --config ../config.toml
