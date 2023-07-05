@@ -1,9 +1,11 @@
+pub mod cfg;
 pub mod cli;
 pub mod message;
 
 use std::time::Duration;
 
 use anyhow::Context;
+use cfg::Configuration;
 use futures::TryStreamExt;
 use pulsar::{
     consumer::InitialPosition, Authentication, ConnectionRetryOptions, Consumer, ConsumerOptions,
@@ -16,7 +18,7 @@ use sozu_command_lib::{
     proto::command::{Request, Response},
 };
 
-use crate::{cli::Args, message::RequestMessage};
+use crate::message::RequestMessage;
 
 /// A simple connector that consumes Sōzu request messages on a pulsar topic
 /// and writes them to a Sōzu instance
@@ -26,10 +28,10 @@ pub struct PulsarConnector {
 }
 
 impl PulsarConnector {
-    pub async fn new(args: Args) -> anyhow::Result<Self> {
+    pub async fn new(config: Configuration) -> anyhow::Result<Self> {
         let authentication = Authentication {
             name: "token".to_owned(),
-            data: args.token.clone().into_bytes(),
+            data: config.pulsar.token.clone().into_bytes(),
         };
         let operation_retry_options = OperationRetryOptions {
             retry_delay: Duration::from_secs(30), // default is 500ms
@@ -43,17 +45,19 @@ impl PulsarConnector {
             ..Default::default()
         };
 
-        let pulsar_client: Pulsar<_> = Pulsar::builder(&args.pulsar_url, TokioExecutor)
+        let pulsar_client: Pulsar<_> = Pulsar::builder(&config.pulsar.url, TokioExecutor)
             .with_auth(authentication)
             .with_connection_retry_options(connection_retry_options)
             .with_operation_retry_options(operation_retry_options)
             .build()
             .await
-            .with_context(|| format!("Error when connecting to pulsar at {}", args.topic))?;
+            .with_context(|| {
+                format!("Error when connecting to pulsar at {}", config.pulsar.topic)
+            })?;
 
         let pulsar_consumer = pulsar_client
             .consumer()
-            .with_topic(&args.topic)
+            .with_topic(&config.pulsar.topic)
             .with_subscription("sozu-pulsar-connector")
             .with_subscription_type(SubType::Exclusive)
             .with_consumer_name("pulsar-connector")
@@ -65,8 +69,9 @@ impl PulsarConnector {
             .await
             .with_context(|| "Failed at creating a pulsar consumer")?;
 
-        let command_socket_path = args
-            .absolute_path_to_command_socket()
+        let command_socket_path = config
+            .sozu
+            .get_socket_path_from_config()
             .with_context(|| "Could not get absolute path to command socket")?;
 
         let mut sozu_channel = Channel::from_path(&command_socket_path, 16384, 163840)

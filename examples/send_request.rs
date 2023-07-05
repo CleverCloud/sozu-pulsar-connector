@@ -1,32 +1,21 @@
 use anyhow::Context;
-use envconfig::Envconfig;
+use clap::Parser;
 use pulsar::{Authentication, Pulsar, TokioExecutor};
 use sozu_command_lib::proto::command::{request::RequestType, Request, Status};
 use tracing::{debug, info};
 
-use sozu_pulsar_connector::message::RequestMessage;
-
-#[derive(Envconfig, Debug)]
-struct Config {
-    #[envconfig(from = "PULSAR_URL")]
-    pulsar_url: String,
-
-    #[envconfig(from = "PULSAR_TOKEN")]
-    pulsar_token: String,
-
-    #[envconfig(from = "PULSAR_TOPIC")]
-    pulsar_topic: String,
-}
+use sozu_pulsar_connector::{cfg::Configuration, cli::Args, message::RequestMessage};
 
 struct RequestSender {
-    config: Config,
+    config: Configuration,
     pulsar_client: Pulsar<pulsar::TokioExecutor>,
 }
 
 impl RequestSender {
     async fn new() -> anyhow::Result<Self> {
-        let config =
-            Config::init_from_env().with_context(|| "Could not create config from environment")?;
+        let args = Args::parse();
+
+        let config = Configuration::try_from(args.config)?;
 
         debug!(
             "The configuration, made from the environment: {:#?}",
@@ -35,10 +24,10 @@ impl RequestSender {
 
         let auth = Authentication {
             name: String::from("token"),
-            data: config.pulsar_token.clone().into_bytes(),
+            data: config.pulsar.token.clone().into_bytes(),
         };
 
-        let pulsar_builder = Pulsar::builder(&config.pulsar_url, TokioExecutor).with_auth(auth);
+        let pulsar_builder = Pulsar::builder(&config.pulsar.url, TokioExecutor).with_auth(auth);
 
         let pulsar_client: Pulsar<pulsar::TokioExecutor> = pulsar_builder
             .build()
@@ -54,19 +43,19 @@ impl RequestSender {
     async fn send_request(&self, request_message: RequestMessage) -> anyhow::Result<()> {
         info!(
             "Trying to send the request: {:#?} on topic {}",
-            request_message, self.config.pulsar_topic
+            request_message, self.config.pulsar.topic
         );
         let mut producer = self
             .pulsar_client
             .producer()
-            .with_topic(self.config.pulsar_topic.clone())
+            .with_topic(self.config.pulsar.topic.clone())
             .with_name("request-sender")
             .build()
             .await
             .with_context(|| {
                 format!(
                     "Could not create a pulsar producer on topic {}",
-                    self.config.pulsar_topic
+                    self.config.pulsar.topic
                 )
             })?;
         info!("Created a producer");

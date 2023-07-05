@@ -7,27 +7,12 @@ It contains a pulsar client that listens on a given topic, to consume Sōzu
 [Request](https://docs.rs/sozu-command-lib/0.14.3/sozu_command_lib/proto/command/struct.Request.html)s and write them on the UNIX socket
 of the Sōzu main process, for execution.
 
-Example use:
+## How to run
+
+Tune the `config.toml` to your pulsar broker and your Sōzu instance, and do:
 
 ```
-cargo run -- \
-      --pulsar-url  pulsar+ssl://c2-pulsar-clevercloud-customers.services.clever-cloud.com:2002 \
-      --topic tenant/namespace/sozu-messages \
-      --token <TOKEN>
-      --config ../config.toml
-```
-
-More easily, copy the example env file into `.env`,
-
-```
-cp .env.example .env
-```
-
-Tune the values, source the file, launch the connector by doing:
-
-```
-source .env
-cargo run -- --pulsar-url $PULSAR_URL --token $PULSAR_TOKEN --topic $PULSAR_TOPIC --config $SOZU_CONFIG
+cargo run -- --config ../config.toml
 ```
 
 ## Test
@@ -39,7 +24,7 @@ In three separate terminals:
 
 1. run Sōzu
 2. run the pulsar-connector as explained above
-3. do `cargo run example send_request`
+3. do `cargo run --example send_request -- --config config.toml`
 
 If all goes well, this happens:
 

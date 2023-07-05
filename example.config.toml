@@ -1,0 +1,8 @@
+[sozu]
+config_path = "/absolute/path/to/your/sozu/config/config.toml"
+
+
+[pulsar]
+url = "pulsar+ssl://some-pulsar-url.com:2002"
+token = "your_authentication_token_to_pulsar"
+topic = "tenant/namespace/sozu-messages"

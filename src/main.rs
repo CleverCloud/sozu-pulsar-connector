@@ -1,7 +1,7 @@
 use anyhow::Context;
 use clap::Parser;
 
-use sozu_pulsar_connector::{cli::Args, PulsarConnector};
+use sozu_pulsar_connector::{cli::Args, PulsarConnector, cfg::Configuration};
 use tracing::info;
 
 #[tokio::main]
@@ -10,7 +10,10 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
     info!("Hi! Here are the args: {:#?}", args);
-    let mut pulsar_connector = PulsarConnector::new(args)
+
+    let config = Configuration::try_from(args.config)?;
+
+    let mut pulsar_connector = PulsarConnector::new(config)
         .await
         .with_context(|| "Could not create the pulsar connector")?;
 
