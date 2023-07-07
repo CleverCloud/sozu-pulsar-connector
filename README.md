@@ -4,9 +4,9 @@ This little library provides a connector between
 [Pulsar](https://pulsar.apache.org/), a messaging platform,
 and [Sōzu](https://github.com/sozu-proxy/sozu), a reverse proxy.
 
-It subscribes to a pulsar topic, and consumes Sōzu
+It subscribes to a pulsar topic, consumes Sōzu
 [Request](https://docs.rs/sozu-command-lib/0.14.3/sozu_command_lib/proto/command/struct.Request.html)s,
-batches them in a file and send them to the Sōzu main process, for execution.
+batches them in a file, and send them to the Sōzu main process for execution.
 
 ### Batching requests
 
@@ -21,7 +21,7 @@ They are several configurable caps that trigger the sending of a batch:
 - a maximum file size (should be under Sōzu's buffer size)
 - an maximum time to wait for new incoming requests before sending a batch
 
-## Configure
+## Configure
 
 Copy the `example.config.toml` to be a `config.toml`:
 
