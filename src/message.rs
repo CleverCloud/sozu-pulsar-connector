@@ -3,7 +3,7 @@ use pulsar::{producer, DeserializeMessage, Error as PulsarError, SerializeMessag
 // #[macro_use]
 use serde::{Deserialize, Serialize};
 
-use sozu_command_lib::proto::command::{Request, Response};
+use sozu_command_lib::proto::command::{request::RequestType, Request, Response};
 
 /// a wrapper arount sozu's Request, so we can serialize it
 #[derive(Serialize, Deserialize, Debug)]
