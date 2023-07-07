@@ -1,8 +1,13 @@
+# Check if requests are redundant by dispatching them on a local Sōzu state
+check_request_redundancy = true
+
 [batch]
 temp_dir = "."
 max_requests = 2000
-max_size = 200000
-interval = 15
+# Recommended 190000 because Sōzu's buffer is at 200 KB
+# - https://github.com/sozu-proxy/sozu/blob/main/bin/src/command/requests.rs#L192
+max_size = 190000
+max_wait_time = 15
 
 [sozu]
 config_path = "/absolute/path/to/your/sozu/config/config.toml"
