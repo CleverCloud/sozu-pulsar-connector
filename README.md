@@ -1,4 +1,4 @@
-# Pulsar Connector
+# Sōzu Pulsar Connector
 
 This little library provides a connector between
 [Pulsar](https://pulsar.apache.org/), a messaging platform,
