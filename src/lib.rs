@@ -2,10 +2,7 @@ pub mod cfg;
 pub mod cli;
 pub mod message;
 
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant, SystemTime},
-};
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::{bail, Context};
 use cfg::Configuration;
@@ -19,10 +16,10 @@ use tempdir::TempDir;
 use tokio::{
     fs::File,
     io::{AsyncWriteExt, BufWriter},
-    task::{spawn_blocking as blocking, JoinError},
+    task::spawn_blocking as blocking,
     time::sleep,
 };
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info};
 
 use sozu_command_lib::{
     channel::Channel,
@@ -235,7 +232,7 @@ impl PulsarConnector {
                     };
                     BatchingState::Receiving(pulsar_message_option)
                 }
-                _ = tokio::spawn(sleep(Duration::from_secs(self.config.batch.interval))) => BatchingState::Ticked,
+                _ = tokio::spawn(sleep(Duration::from_secs(self.config.batch.max_wait_time))) => BatchingState::Ticked,
             };
 
             // either send a batch
@@ -262,14 +259,19 @@ impl PulsarConnector {
 
                 self.requests_received += 1;
 
-                // Check if the order is legit and write it on the batch file if it is the case.
-                // if the state returns an error when dispatching a request,
-                // it most probably means the request is redundant
-                if self.sozu_state.dispatch(&request).is_ok() {
+                if self.config.check_request_redundancy {
+                    // Check if the request is legit and write it on the batch file if it is the case.
+                    // if the state returns an error when dispatching a request,
+                    // it most probably means the request is redundant
+                    if self.sozu_state.dispatch(&request).is_ok() {
+                        self.write_request_on_batch_file(&request).await?;
+                        self.requests_sent += 1;
+                    } else {
+                        debug!("This request is redundant");
+                    }
+                } else {
                     self.write_request_on_batch_file(&request).await?;
                     self.requests_sent += 1;
-                } else {
-                    debug!("This request is redundant");
                 }
             }
         }

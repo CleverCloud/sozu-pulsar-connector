@@ -1,14 +1,10 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-
 use anyhow::Context;
 use clap::Parser;
 use pulsar::{Authentication, Pulsar, TokioExecutor};
 use rand::{distributions::Alphanumeric, Rng};
 use sozu_command_lib::{
     config::ListenerBuilder,
-    proto::command::{
-        request::RequestType, AddBackend, Cluster, Request, RequestHttpFrontend, Status,
-    },
+    proto::command::{request::RequestType, AddBackend, Cluster, Request, RequestHttpFrontend},
 };
 use tracing::{debug, info};
 

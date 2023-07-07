@@ -81,8 +81,8 @@ pub struct Batch {
     pub max_requests: u64,
     /// limit to the size of a batch, (in bytes)
     pub max_size: u64,
-    // Duration between batches, in seconds
-    pub interval: u64,
+    /// maximum time to wait before sending a batch, when no new request is incoming
+    pub max_wait_time: u64,
 }
 
 /// Pulsar-related configuration
@@ -105,6 +105,8 @@ pub struct Configuration {
     pub pulsar: Pulsar,
     /// various caps to a batch, such as size and duration
     pub batch: Batch,
+    /// Check if requests are redundant by dispatching them on a local Sōzu state
+    pub check_request_redundancy: bool,
 }
 
 impl TryFrom<String> for Configuration {
