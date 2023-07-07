@@ -2242,6 +2242,7 @@ dependencies = [
  "futures",
  "path-absolutize",
  "pulsar",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "sozu-command-lib",

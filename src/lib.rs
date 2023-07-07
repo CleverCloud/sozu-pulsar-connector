@@ -63,7 +63,7 @@ pub struct PulsarConnector {
     /// that will tell us if they are redundant.
     ///
     /// Needed: `ConfigState::dispatch()` in `sozu_command_lib` should return a custom error that we could pattern-match on
-    sozu_state: ConfigState,
+    sozu_state: ConfigState, // TODO: make the use of this configurable
     /// Either waiting for a request, receiving one to batch, or a tick is reached
     batching_state: BatchingState,
     /// the temporary directory in which the batch file will be created
@@ -161,32 +161,20 @@ impl PulsarConnector {
         })
     }
 
-    pub async fn run(&mut self) -> anyhow::Result<()> {
-        info!("Listening for incoming messages");
-        while let Some(msg) = self.pulsar_consumer.try_next().await? {
-            let message = match msg.deserialize() {
-                Ok(m) => m,
-                Err(e) => {
-                    error!("Error deserializing message: {:?}", e);
-                    self.pulsar_consumer.ack(&msg).await?;
-                    continue;
-                }
-            };
+    pub async fn write_request_on_batch_file(&mut self, request: &Request) -> anyhow::Result<()> {
+        // why a WorkerRequest?
+        let worker_request = WorkerRequest {
+            id: format!("{}-{}", env!("CARGO_PKG_NAME"), self.requests_sent).to_uppercase(),
+            content: request.clone(),
+        };
 
-            info!("received message: {:?}", message);
+        let payload = blocking(move || serde_json::to_string(&worker_request)).await??;
 
-            let command_request = message.0.clone();
+        self.file_writer
+            .write_all(format!("{payload}\n\0").as_bytes())
+            .await?;
 
-            match self.write_command_to_sozu(command_request.clone()).await {
-                Ok(()) => info!("Command request successfully written to Sōzu"),
-                Err(write_error) => error!("Error writing request to sozu: {:#}", write_error),
-            }
-
-            debug!("acknowledging message {:?}", message);
-            if let Err(e) = self.pulsar_consumer.ack(&msg).await {
-                error!("Could not acknowledge message {}", e);
-            }
-        }
+        self.current_batch_size += (payload.as_bytes().len() + 2) as u64;
 
         Ok(())
     }
@@ -201,7 +189,7 @@ impl PulsarConnector {
     pub async fn send_batched_requests_to_sozu(&mut self) -> anyhow::Result<()> {
         info!(
             requests_received = self.requests_received,
-            batches_sent = self.requests_sent,
+            requests_sent = self.requests_sent,
             state_file = self.batch_file.display().to_string(),
             "Requests forwarded to the proxy"
         );
@@ -220,31 +208,13 @@ impl PulsarConnector {
         Ok(())
     }
 
-    pub async fn add_request_to_batch(&mut self, request: &Request) -> anyhow::Result<()> {
-        // why a WorkerRequest?
-        let worker_request = WorkerRequest {
-            id: format!("{}-{}", self.config.batch.temp_dir, self.requests_sent).to_uppercase(),
-            content: request.clone(),
-        };
-
-        let payload = blocking(move || serde_json::to_string(&worker_request)).await??;
-
-        self.file_writer
-            .write_all(format!("{payload}\n\0").as_bytes())
-            .await?;
-
-        self.current_batch_size += (payload.as_bytes().len() + 2) as u64;
-
-        Ok(())
-    }
-
     pub async fn recreate_batch_file(&mut self) -> anyhow::Result<()> {
         self.batch_file = self
             .temp_dir
             .path()
             .join(format!("requests-{}.json", self.requests_sent));
 
-        debug!("Creating batch file {:?}", self.batch_file);
+        debug!("Creating batch file {}", self.batch_file.display());
         let file = File::create(&self.batch_file).await?;
         self.file_writer = BufWriter::new(file);
         Ok(())
@@ -257,13 +227,15 @@ impl PulsarConnector {
             // try receiving pulsar messages
             self.batching_state = tokio::select! {
                 pulsar_message_result = self.pulsar_consumer.try_next() => {
+
+
                     let pulsar_message_option = match pulsar_message_result {
                         Ok(pulsar_message_option) => pulsar_message_option,
                         Err(_) => bail!("Error while consuming pulsar message"),
                     };
                     BatchingState::Receiving(pulsar_message_option)
                 }
-                _ = sleep(Duration::from_secs(self.config.batch.interval)) => BatchingState::Ticked,
+                _ = tokio::spawn(sleep(Duration::from_secs(self.config.batch.interval))) => BatchingState::Ticked,
             };
 
             // either send a batch
@@ -294,7 +266,7 @@ impl PulsarConnector {
                 // if the state returns an error when dispatching a request,
                 // it most probably means the request is redundant
                 if self.sozu_state.dispatch(&request).is_ok() {
-                    self.add_request_to_batch(&request).await?;
+                    self.write_request_on_batch_file(&request).await?;
                     self.requests_sent += 1;
                 } else {
                     debug!("This request is redundant");

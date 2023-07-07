@@ -24,19 +24,19 @@ cargo run -- --config ../config.toml
 
 ## Test
 
-The `send_request` example produces a `Status` request on the same topic that is consumed by
+The `send_requests` example produces a group of cluster-creating requests on the same topic that is consumed by
 the pulsar connector.
 
 In three separate terminals:
 
 1. run Sōzu
 2. run the pulsar-connector as explained above
-3. do `cargo run --example send_request -- --config config.toml`
+3. do `cargo run --example send_requests -- --config config.toml`
 
 If all goes well, this happens:
 
-1. the `send_request` example writes the request message on the pulsar topic
-2. the pulsar connector consumes the request message on the topic
-3. the pulsar connector writes the request to Sōzu via the unix socket
+1. the `send_requests` example writes the request messages on the pulsar topic
+2. the pulsar connector consumes the request messages on the topic
+3. the pulsar connector writes the requests to Sōzu via the unix socket
 4. Sōzu executes the request
 
