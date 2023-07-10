@@ -42,6 +42,22 @@ static REQUEST_EMITTED: Lazy<IntCounterVec> = Lazy::new(|| {
     .expect("'proxy_manager_request_emitted' to not be already registered")
 });
 
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("Error writing the file: {0}")]
+    WriteError(String),
+    #[error("replace me with an actual error")]
+    DummyError,
+    #[error("async runtime error")]
+    TokioError,
+    #[error("Error while flushing the writer of the batch file")]
+    FlushError,
+    #[error("Error while creating a new batch file")]
+    FileError,
+    #[error("Error deserializing a pulsar message: {0}")]
+    Serde(String),
+}
+
 /// State machine for the batching process.
 /// Either we receive an incoming request to batch,
 /// or we reached a tick and stop receiving, to send a batch
@@ -170,18 +186,22 @@ impl PulsarConnector {
         })
     }
 
-    pub async fn write_request_on_batch_file(&mut self, request: &Request) -> anyhow::Result<()> {
+    pub async fn write_request_on_batch_file(&mut self, request: &Request) -> Result<(), Error> {
         // why a WorkerRequest?
         let worker_request = WorkerRequest {
             id: format!("{}-{}", env!("CARGO_PKG_NAME"), self.requests_sent).to_uppercase(),
             content: request.clone(),
         };
 
-        let payload = blocking(move || serde_json::to_string(&worker_request)).await??;
+        let payload = blocking(move || serde_json::to_string(&worker_request))
+            .await
+            .map_err(|e| Error::TokioError)?
+            .map_err(|e| Error::TokioError)?;
 
         self.file_writer
             .write_all(format!("{payload}\n\0").as_bytes())
-            .await?;
+            .await
+            .map_err(|write_error| Error::WriteError(write_error.to_string()))?;
 
         self.current_batch_size += (payload.as_bytes().len() + 2) as u64;
 
@@ -195,7 +215,7 @@ impl PulsarConnector {
             || self.current_batch_size >= self.config.batch.max_size
     }
 
-    pub async fn send_batched_requests_to_sozu(&mut self) -> anyhow::Result<()> {
+    pub async fn send_batched_requests_to_sozu(&mut self) -> Result<(), Error> {
         info!(
             requests_received = self.requests_received,
             requests_sent = self.requests_sent,
@@ -203,7 +223,11 @@ impl PulsarConnector {
             "Requests forwarded to the proxy"
         );
 
-        self.file_writer.flush().await?;
+        self.file_writer
+            .flush()
+            .await
+            .map_err(|flush_error| Error::FlushError)?;
+
         let load_state_request =
             RequestType::LoadState(self.batch_file.to_string_lossy().to_string());
 
@@ -217,21 +241,23 @@ impl PulsarConnector {
         Ok(())
     }
 
-    pub async fn recreate_batch_file(&mut self) -> anyhow::Result<()> {
+    pub async fn recreate_batch_file(&mut self) -> Result<(), Error> {
         self.batch_file = self
             .temp_dir
             .path()
             .join(format!("requests-{}.json", self.requests_sent));
 
         debug!("Creating batch file {}", self.batch_file.display());
-        let file = File::create(&self.batch_file).await?;
+        let file = File::create(&self.batch_file)
+            .await
+            .map_err(|io_error| Error::FileError)?;
         self.file_writer = BufWriter::new(file);
         Ok(())
     }
 
     /// Consume the pulsar topic, batch the requests by writing them in a temporary file
     /// and periodically tell Sōzu to load this file as state
-    pub async fn run_with_batching(&mut self) -> anyhow::Result<()> {
+    pub async fn run_with_batching(&mut self) -> Result<(), Error> {
         loop {
             // try receiving pulsar messages
             self.batching_state = tokio::select! {
@@ -240,7 +266,7 @@ impl PulsarConnector {
 
                     let pulsar_message_option = match pulsar_message_result {
                         Ok(pulsar_message_option) => pulsar_message_option,
-                        Err(_) => bail!("Error while consuming pulsar message"),
+                        Err(_) => return Err(Error::DummyError), //bail!("Error while consuming pulsar message"),
                     };
                     BatchingState::Receiving(pulsar_message_option)
                 }
@@ -260,7 +286,12 @@ impl PulsarConnector {
             // or add the received request to the current batch
             if let BatchingState::Receiving(pulsar_message_option) = &self.batching_state {
                 let request = match pulsar_message_option {
-                    Some(request_message) => request_message.deserialize()?.0,
+                    Some(request_message) => {
+                        request_message
+                            .deserialize()
+                            .map_err(|serde_error| Error::Serde(serde_error.to_string()))?
+                            .0
+                    }
                     None => {
                         // send the remaining requests and exit the loop
                         self.send_batched_requests_to_sozu().await?;
