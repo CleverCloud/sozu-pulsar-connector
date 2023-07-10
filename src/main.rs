@@ -17,6 +17,7 @@ async fn main() -> anyhow::Result<()> {
         .await
         .with_context(|| "Could not create the pulsar connector")?;
 
+
     pulsar_connector
         .run_with_batching()
         .await

@@ -1,12 +1,15 @@
 pub mod cfg;
 pub mod cli;
 pub mod message;
+pub mod metrics_server;
 
 use std::{path::PathBuf, time::Duration};
 
 use anyhow::{bail, Context};
 use cfg::Configuration;
 use futures::TryStreamExt;
+use once_cell::sync::Lazy;
+use prometheus::{register_int_counter_vec, IntCounterVec};
 use pulsar::{
     consumer::{InitialPosition, Message as PulsarMessage},
     Authentication, ConnectionRetryOptions, Consumer, ConsumerOptions, OperationRetryOptions,
@@ -29,6 +32,15 @@ use sozu_command_lib::{
 };
 
 use crate::message::RequestMessage;
+
+static REQUEST_EMITTED: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_int_counter_vec!(
+        "proxy_manager_request_emitted",
+        "Number of request emitted by the manager daemon",
+        &["kind"]
+    )
+    .expect("'proxy_manager_request_emitted' to not be already registered")
+});
 
 /// State machine for the batching process.
 /// Either we receive an incoming request to batch,
