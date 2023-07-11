@@ -26,7 +26,10 @@ use tracing::{debug, error, info};
 
 use sozu_command_lib::{
     channel::Channel,
-    proto::command::{request::RequestType, Request, Response},
+    proto::{
+        command::{request::RequestType, Request, Response},
+        display::format_request_type,
+    },
     request::WorkerRequest,
     state::ConfigState,
 };
@@ -35,11 +38,11 @@ use crate::message::RequestMessage;
 
 static REQUEST_EMITTED: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
-        "proxy_manager_request_emitted",
-        "Number of request emitted by the manager daemon",
+        "pulsar_connector_request_emitted",
+        "Number of request emitted by the pulsar connector",
         &["kind"]
     )
-    .expect("'proxy_manager_request_emitted' to not be already registered")
+    .expect("'pulsar_connector_request_emitted' to not be already registered")
 });
 
 #[derive(thiserror::Error, Debug)]
@@ -80,6 +83,7 @@ pub enum BatchingState {
 pub struct PulsarConnector {
     config: Configuration,
     pulsar_consumer: Consumer<RequestMessage, TokioExecutor>,
+    /// A channel to write requests on
     sozu_channel: Channel<Request, Response>,
     /// A Sōzu state to filter redundant requests.
     ///
@@ -190,6 +194,11 @@ impl PulsarConnector {
         &mut self,
         request: &Request,
     ) -> Result<(), ConnectorError> {
+        if let Some(request_type) = &request.request_type {
+            let request_kind = format_request_type(&request_type);
+            REQUEST_EMITTED.with_label_values(&[&request_kind]).inc();
+        }
+
         // why a WorkerRequest?
         let worker_request = WorkerRequest {
             id: format!("{}-{}", env!("CARGO_PKG_NAME"), self.requests_sent).to_uppercase(),
@@ -233,6 +242,9 @@ impl PulsarConnector {
 
         let load_state_request =
             RequestType::LoadState(self.batch_file.to_string_lossy().to_string());
+
+        let request_kind = format_request_type(&load_state_request);
+        REQUEST_EMITTED.with_label_values(&[&request_kind]).inc();
 
         if let Err(err) = self.write_command_to_sozu(load_state_request.into()).await {
             error!(

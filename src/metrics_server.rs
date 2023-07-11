@@ -96,7 +96,10 @@ pub async fn serve_metrics(config: Configuration) -> Result<(), MetricsServerErr
         ))
     })?;
 
-    info!(addr = address.to_string(), "Begin to listen on address");
+    info!(
+        addr = address.to_string(),
+        "Metrics server begins to listen on address"
+    );
 
     Server::try_bind(&address)
         .map_err(|hyper_error| MetricsServerError::Bind {
