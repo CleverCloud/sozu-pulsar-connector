@@ -21,6 +21,24 @@ They are several configurable caps that trigger the sending of a batch:
 - a maximum file size (should be under Sōzu's buffer size)
 - an maximum time to wait for new incoming requests before sending a batch
 
+### Prometheus metrics
+
+Accessible on the `/metrics` path, they offer insights on the requests transmitted to Sōzu,
+for instance:
+
+```text
+# HELP proxy_manager_request_emitted Number of request emitted by the manager daemon
+# TYPE proxy_manager_request_emitted counter
+proxy_manager_request_emitted{kind="AddBackend"} 1340
+proxy_manager_request_emitted{kind="AddCluster"} 670
+proxy_manager_request_emitted{kind="AddHttpFrontend"} 670
+proxy_manager_request_emitted{kind="AddHttpListener"} 1
+proxy_manager_request_emitted{kind="LoadState"} 5
+proxy_manager_request_emitted{kind="Status"} 14
+```
+
+Be sure to set the value of `metrics_address` in `config.toml`.
+
 ## Configure
 
 Copy the `example.config.toml` to be a `config.toml`:

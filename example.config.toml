@@ -1,7 +1,7 @@
 # Check if requests are redundant by dispatching them on a local Sōzu state
 check_request_redundancy = true
 
-metrics_address = "localhost:8080"
+metrics_address = "127.0.0.1:8003"
 
 [batch]
 temp_dir = "."
