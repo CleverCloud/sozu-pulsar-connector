@@ -5,7 +5,7 @@ pub mod metrics_server;
 
 use std::{path::PathBuf, time::Duration};
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use cfg::Configuration;
 use futures::TryStreamExt;
 use once_cell::sync::Lazy;
@@ -19,7 +19,7 @@ use tempdir::TempDir;
 use tokio::{
     fs::File,
     io::{AsyncWriteExt, BufWriter},
-    task::spawn_blocking as blocking,
+    task::{spawn_blocking as blocking, JoinError},
     time::sleep,
 };
 use tracing::{debug, error, info};
@@ -43,19 +43,23 @@ static REQUEST_EMITTED: Lazy<IntCounterVec> = Lazy::new(|| {
 });
 
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
+pub enum ConnectorError {
     #[error("Error writing the file: {0}")]
     WriteError(String),
     #[error("replace me with an actual error")]
     DummyError,
     #[error("async runtime error")]
-    TokioError,
+    TokioError(JoinError),
     #[error("Error while flushing the writer of the batch file")]
     FlushError,
-    #[error("Error while creating a new batch file")]
-    FileError,
+    #[error("File error: {0}")]
+    FileError(String),
     #[error("Error deserializing a pulsar message: {0}")]
     Serde(String),
+    #[error("Error consuming a pulsar message: {0}")]
+    ConsumingError(String),
+    #[error("Could not create the pulsar connector: {0}")]
+    CreationError(String),
 }
 
 /// State machine for the batching process.
@@ -63,18 +67,13 @@ pub enum Error {
 /// or we reached a tick and stop receiving, to send a batch
 pub enum BatchingState {
     /// Receiving a request to be added to the batch
+    ///
+    /// If the payload option is None, it means the stream of messages has ended,
+    /// which is normal behaviour
     Receiving(Option<PulsarMessage<RequestMessage>>),
     /// Tick has been reached, the batch should be sent
     Ticked,
 }
-
-/*
-impl From<std::option::Option<pulsar::consumer::Message<RequestMessage>>> for BatchingState {
-    fn from(request: std::option::Option<pulsar::consumer::Message<RequestMessage>>) -> Self {
-        Self::Receiving(request)
-    }
-}
-*/
 
 /// A simple connector that consumes Sōzu request messages on a pulsar topic
 /// and writes them to a Sōzu instance
@@ -111,6 +110,7 @@ pub struct PulsarConnector {
 }
 
 impl PulsarConnector {
+    /// uses anyhow::Error for convenience, can be formatted to one line with {:#}
     pub async fn new(config: Configuration) -> anyhow::Result<Self> {
         let authentication = Authentication {
             name: "token".to_owned(),
@@ -186,7 +186,10 @@ impl PulsarConnector {
         })
     }
 
-    pub async fn write_request_on_batch_file(&mut self, request: &Request) -> Result<(), Error> {
+    pub async fn write_request_on_batch_file(
+        &mut self,
+        request: &Request,
+    ) -> Result<(), ConnectorError> {
         // why a WorkerRequest?
         let worker_request = WorkerRequest {
             id: format!("{}-{}", env!("CARGO_PKG_NAME"), self.requests_sent).to_uppercase(),
@@ -195,13 +198,13 @@ impl PulsarConnector {
 
         let payload = blocking(move || serde_json::to_string(&worker_request))
             .await
-            .map_err(|e| Error::TokioError)?
-            .map_err(|e| Error::TokioError)?;
+            .map_err(|tokio_error| ConnectorError::TokioError(tokio_error))?
+            .map_err(|serde_error| ConnectorError::Serde(serde_error.to_string()))?;
 
         self.file_writer
             .write_all(format!("{payload}\n\0").as_bytes())
             .await
-            .map_err(|write_error| Error::WriteError(write_error.to_string()))?;
+            .map_err(|write_error| ConnectorError::WriteError(write_error.to_string()))?;
 
         self.current_batch_size += (payload.as_bytes().len() + 2) as u64;
 
@@ -215,7 +218,7 @@ impl PulsarConnector {
             || self.current_batch_size >= self.config.batch.max_size
     }
 
-    pub async fn send_batched_requests_to_sozu(&mut self) -> Result<(), Error> {
+    pub async fn send_batched_requests_to_sozu(&mut self) -> Result<(), ConnectorError> {
         info!(
             requests_received = self.requests_received,
             requests_sent = self.requests_sent,
@@ -226,14 +229,14 @@ impl PulsarConnector {
         self.file_writer
             .flush()
             .await
-            .map_err(|flush_error| Error::FlushError)?;
+            .map_err(|_flush_error| ConnectorError::FlushError)?;
 
         let load_state_request =
             RequestType::LoadState(self.batch_file.to_string_lossy().to_string());
 
         if let Err(err) = self.write_command_to_sozu(load_state_request.into()).await {
             error!(
-                error = err.to_string(),
+                error = format!("{:#}", err),
                 "Could not send batched requests to Sozu"
             );
         }
@@ -241,32 +244,35 @@ impl PulsarConnector {
         Ok(())
     }
 
-    pub async fn recreate_batch_file(&mut self) -> Result<(), Error> {
+    pub async fn recreate_batch_file(&mut self) -> Result<(), ConnectorError> {
         self.batch_file = self
             .temp_dir
             .path()
             .join(format!("requests-{}.json", self.requests_sent));
 
         debug!("Creating batch file {}", self.batch_file.display());
-        let file = File::create(&self.batch_file)
-            .await
-            .map_err(|io_error| Error::FileError)?;
+
+        let file = File::create(&self.batch_file).await.map_err(|io_error| {
+            ConnectorError::FileError(format!(
+                "Failed to create a new batch file: {}",
+                io_error.to_string()
+            ))
+        })?;
+
         self.file_writer = BufWriter::new(file);
         Ok(())
     }
 
     /// Consume the pulsar topic, batch the requests by writing them in a temporary file
     /// and periodically tell Sōzu to load this file as state
-    pub async fn run_with_batching(&mut self) -> Result<(), Error> {
+    pub async fn run_with_batching(&mut self) -> Result<(), ConnectorError> {
         loop {
             // try receiving pulsar messages
             self.batching_state = tokio::select! {
                 pulsar_message_result = self.pulsar_consumer.try_next() => {
-
-
                     let pulsar_message_option = match pulsar_message_result {
                         Ok(pulsar_message_option) => pulsar_message_option,
-                        Err(_) => return Err(Error::DummyError), //bail!("Error while consuming pulsar message"),
+                        Err(e) => return Err(ConnectorError::ConsumingError(e.to_string())),
                     };
                     BatchingState::Receiving(pulsar_message_option)
                 }
@@ -289,7 +295,7 @@ impl PulsarConnector {
                     Some(request_message) => {
                         request_message
                             .deserialize()
-                            .map_err(|serde_error| Error::Serde(serde_error.to_string()))?
+                            .map_err(|serde_error| ConnectorError::Serde(serde_error.to_string()))?
                             .0
                     }
                     None => {
@@ -325,4 +331,12 @@ impl PulsarConnector {
             .write_message(&command_request)
             .with_context(|| "Channel write error")
     }
+}
+
+pub async fn create_and_run_connector(config: Configuration) -> Result<(), ConnectorError> {
+    let mut pulsar_connector = PulsarConnector::new(config)
+        .await
+        .map_err(|creation_error| ConnectorError::CreationError(format!("{:#}", creation_error)))?;
+
+    pulsar_connector.run_with_batching().await
 }

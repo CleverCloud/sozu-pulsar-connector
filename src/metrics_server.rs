@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 
 use axum::{
     http::{HeaderValue, Request, Response},
-    middleware,
     routing::{any, get},
     Router,
 };
@@ -13,9 +12,12 @@ use tracing::info;
 use crate::cfg::Configuration;
 
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("failed to bind server, {0}")]
-    Bind(hyper::Error),
+pub enum MetricsServerError {
+    #[error("failed to bind server to address {address}: {hyper_error}")]
+    Bind {
+        address: String,
+        hyper_error: hyper::Error,
+    },
     #[error("failed to serve content, {0}")]
     Serve(hyper::Error),
     #[error("Could not parse address")]
@@ -86,21 +88,24 @@ pub fn router() -> Router {
     // .layer(middleware::from_fn(layer::access))
 }
 
-pub async fn serve_metrics(config: Configuration) -> Result<(), Error> {
+pub async fn serve_metrics(config: Configuration) -> Result<(), MetricsServerError> {
     let address: SocketAddr = config.metrics_address.parse().map_err(|_| {
-        Error::WrongAddress(format!(
+        MetricsServerError::WrongAddress(format!(
             "Could not parse address {}",
             config.metrics_address
         ))
     })?;
 
     info!(addr = address.to_string(), "Begin to listen on address");
-    
+
     Server::try_bind(&address)
-        .map_err(Error::Bind)?
+        .map_err(|hyper_error| MetricsServerError::Bind {
+            hyper_error,
+            address: address.to_string(),
+        })?
         .serve(router().into_make_service())
         .await
-        .map_err(Error::Serve)?;
+        .map_err(MetricsServerError::Serve)?;
 
     Ok(())
 }

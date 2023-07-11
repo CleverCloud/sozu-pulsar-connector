@@ -1,6 +1,8 @@
 # Check if requests are redundant by dispatching them on a local Sōzu state
 check_request_redundancy = true
 
+metrics_address = "localhost:8080"
+
 [batch]
 temp_dir = "."
 max_requests = 2000
