@@ -107,6 +107,8 @@ pub struct Configuration {
     pub batch: Batch,
     /// Check if requests are redundant by dispatching them on a local Sōzu state
     pub check_request_redundancy: bool,
+    /// Address on which to listen on the /metrics path to return prometheus metrics
+    pub metrics_address: String,
 }
 
 impl TryFrom<String> for Configuration {
