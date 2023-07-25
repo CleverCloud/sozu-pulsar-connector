@@ -1,20 +1,43 @@
-# Check if requests are redundant by dispatching them on a local Sōzu state
-check_request_redundancy = true
-
-metrics_address = "127.0.0.1:8003"
-
-[batch]
-temp_dir = "."
-max_requests = 2000
-# Recommended 190000 because Sōzu's buffer is at 200 KB
-# - https://github.com/sozu-proxy/sozu/blob/main/bin/src/command/requests.rs#L192
-max_size = 190000
-max_wait_time = 15
+# Socket address on which to listen
+listening-address = "0.0.0.0:3000"
 
 [sozu]
-config_path = "/absolute/path/to/your/sozu/config/config.toml"
+# Path to Sōzu's configuration file
+configuration = "path/to/sozu/config.toml"
+# Instantiate an internal configuration state object from Sōzu to retrieve
+# deplucated requests and do not forward them.
+deduplicate = false
+
+[sozu.batch]
+# The maximum number of requests to send in a batch
+max-requests = 10_000
+# The maximum size of requests to send in a batch in bytes
+max-size = 190_000
+# The maximum duration to wait between two batch is milliseconds
+max-wait-time = 15_000
 
 [pulsar]
-url = "pulsar+ssl://some-pulsar-url.com:2002"
-token = "your_authentication_token_to_pulsar"
-topic = "tenant/namespace/sozu-messages"
+# Binary url of Pulsar deployment
+url = "pulsar+ssl://..."
+# Token to authenticate to Pulsar
+token = ""
+# Topic to listen to.
+topic = "persistent://tenant/namespace/topic"
+
+[pulsar.retry]
+# Duration between considering that a connection has timeout is milliseconds
+timeout = 30_000
+# Duration to keep alive a connection in milliseconds
+keep-alive = 600_000
+# Minimum duration of a backoff retry in milliseconds
+min-backoff-duration = 100
+# Maximum duration of a backoff retry in milliseconds
+max-backoff-duration = 600_000
+# Maximum number of retries
+max-retries = 15
+
+[sentry]
+# The Data Source Name of our API
+dsn = "https://..."
+# See https://docs.rs/sentry/0.31.3/sentry/struct.ClientOptions.html#structfield.environment
+environment = "production"

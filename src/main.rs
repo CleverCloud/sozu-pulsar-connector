@@ -1,46 +1,113 @@
-use clap::Parser;
+//! # Sozu pulsar connector
+//!
+//! This application retrieve requests from a pulsar topics and forward them to
+//! Sōzu.
 
-use sozu_pulsar_connector::{
-    cfg::Configuration, cli::Args, create_and_run_connector, metrics_server, ConnectorError,
-};
-use tokio::task::JoinError;
+use std::{path::PathBuf, sync::Arc};
+
+use clap::{ArgAction, Parser};
 use tracing::{error, info};
 
+use crate::svc::{
+    config::{self, ConnectorConfiguration},
+    http,
+    logging::{self, LoggingInitGuard},
+    messaging,
+};
+
+pub mod svc;
+
+// -----------------------------------------------------------------------------
+// Error
+
 #[derive(thiserror::Error, Debug)]
-pub enum MainError {
-    #[error("Error parsing the configuration: {0}")]
-    Config(String),
-    #[error("Error with the metrics server: {0}")]
-    MetricsServer(metrics_server::MetricsServerError),
-    #[error("Error with the pulsar connector: {0}")]
-    ConnectorError(ConnectorError),
-    #[error("Async runtime error: {0}")]
-    TokioError(JoinError),
+pub enum Error {
+    #[error("failed to load configuration, {0}")]
+    Configuration(config::Error),
+    #[error("failed to initialize the logging system, {0}")]
+    Logging(logging::Error),
+    #[error("failed to create handler on termination signal, {0}")]
+    Termination(std::io::Error),
+    #[error("failed to serve http server, {0}")]
+    HttpServer(http::server::Error),
+    #[error("failed to load sōzu configuration, {0}")]
+    SozuConfiguration(sozu_client::config::Error),
+    #[error("failed to connect and consume pulsar topic, {0}")]
+    Consume(messaging::Error),
 }
 
-impl From<JoinError> for MainError {
-    fn from(err: JoinError) -> Self {
-        Self::TokioError(err)
+// -----------------------------------------------------------------------------
+// Args
+
+/// A connector to listen to pulsar topics for `RequestType`, it then forward
+/// them to Sōzu using a batching method through the `RequestType::LoadState`
+/// request.
+#[derive(Parser, PartialEq, Eq, Clone, Debug)]
+#[command(author, version, about, long_about = None)]
+pub struct Args {
+    /// Increase verbosity
+    #[clap(short = 'v', global = true, action = ArgAction::Count)]
+    pub verbosity: u8,
+    /// Path to the configuration file of the prometheus connector,
+    #[clap(short = 'c', long = "config")]
+    pub config: Option<PathBuf>,
+}
+
+impl paw::ParseArgs for Args {
+    type Error = Error;
+
+    fn parse_args() -> Result<Self, Self::Error> {
+        Ok(Self::parse())
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), MainError> {
-    tracing_subscriber::fmt::init();
+// -----------------------------------------------------------------------------
+// main
 
-    let args = Args::parse();
-    info!("Hi! Here are the args: {:#?}", args);
+#[paw::main]
+#[tokio::main(flavor = "current_thread")]
+pub async fn main(args: Args) -> Result<(), Error> {
+    // -------------------------------------------------------------------------
+    // Retrieve configuration
+    let config = Arc::new(match &args.config {
+        Some(path) => {
+            ConnectorConfiguration::try_from(path.to_owned()).map_err(Error::Configuration)?
+        }
+        None => ConnectorConfiguration::try_new().map_err(Error::Configuration)?,
+    });
 
-    let config =
-        Configuration::try_from(args.config).map_err(|e| MainError::Config(e.to_string()))?;
+    // -------------------------------------------------------------------------
+    // Initialize logging system
+    let _guard = match &config.sentry {
+        Some(sentry_ctx) => {
+            logging::initialize_with_sentry(args.verbosity as usize, sentry_ctx.to_owned())
+                .map_err(Error::Logging)?
+        }
+        None => logging::initialize(args.verbosity as usize)
+            .map(|_| LoggingInitGuard::default())
+            .map_err(Error::Logging)?,
+    };
+
+    // -------------------------------------------------------------------------
+    // Load Sōzu configuration
+    info!(
+        path = config.sozu.configuration.display().to_string(),
+        "Load Sōzu configuration"
+    );
+
+    let sozu_config = Arc::new(
+        sozu_client::config::try_from(&config.sozu.configuration)
+            .map_err(Error::SozuConfiguration)?,
+    );
+
+    // -------------------------------------------------------------------------
+    // Start HTTP server and listener to termination signals concurrently and
+    // not in parallel
 
     let result = tokio::select! {
-        r = tokio::spawn(create_and_run_connector(config.clone())) => {
-            r?.map_err(MainError::ConnectorError)
-        }
-        r = tokio::spawn(metrics_server::serve_metrics(config.clone())) => {
-            r?.map_err(MainError::MetricsServer)
-        }
+        r = tokio::signal::ctrl_c() => r.map_err(Error::Termination),
+        r = http::server::serve(config.to_owned()) => r.map_err(Error::HttpServer),
+        r = messaging::consume(config, sozu_config) => r.map_err(Error::Consume),
     };
 
     if let Err(err) = result {
@@ -53,7 +120,6 @@ async fn main() -> Result<(), MainError> {
         return Err(err);
     }
 
-    info!("Successfully halted the {}!", env!("CARGO_PKG_NAME"));
-
+    info!("Gracefully halted {}!", env!("CARGO_PKG_NAME"));
     Ok(())
 }
