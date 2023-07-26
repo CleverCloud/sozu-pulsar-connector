@@ -1,0 +1,43 @@
+# Socket address on which to listen
+listening-address = "0.0.0.0:3000"
+
+[sozu]
+# Path to Sōzu's configuration file
+configuration = "path/to/sozu/config.toml"
+# Instantiate an internal configuration state object from Sōzu to retrieve
+# deplucated requests and do not forward them.
+deduplicate = false
+
+[sozu.batch]
+# The maximum number of requests to send in a batch
+max-requests = 10_000
+# The maximum size of requests to send in a batch in bytes
+max-size = 190_000
+# The maximum duration to wait between two batch is milliseconds
+max-wait-time = 15_000
+
+[pulsar]
+# Binary url of Pulsar deployment
+url = "pulsar+ssl://..."
+# Token to authenticate to Pulsar
+token = ""
+# Topic to listen to.
+topic = "persistent://tenant/namespace/topic"
+
+[pulsar.retry]
+# Duration between considering that a connection has timeout is milliseconds
+timeout = 30_000
+# Duration to keep alive a connection in milliseconds
+keep-alive = 600_000
+# Minimum duration of a backoff retry in milliseconds
+min-backoff-duration = 100
+# Maximum duration of a backoff retry in milliseconds
+max-backoff-duration = 600_000
+# Maximum number of retries
+max-retries = 15
+
+[sentry]
+# The Data Source Name of our API
+dsn = "https://..."
+# See https://docs.rs/sentry/0.31.3/sentry/struct.ClientOptions.html#structfield.environment
+environment = "production"
