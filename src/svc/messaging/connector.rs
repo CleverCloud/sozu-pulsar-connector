@@ -17,10 +17,9 @@ use sozu_client::{
 use sozu_command_lib::{
     config::Config,
     proto::{
-        command::{request::RequestType, Request},
+        command::{request::RequestType, Request, WorkerRequest},
         display::format_request_type,
     },
-    request::WorkerRequest,
     state::ConfigState,
 };
 use tempdir::TempDir;
