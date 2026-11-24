@@ -17,10 +17,9 @@ use sozu_client::{
 use sozu_command_lib::{
     config::Config,
     proto::{
-        command::{request::RequestType, Request},
+        command::{request::RequestType, Request, WorkerRequest},
         display::format_request_type,
     },
-    request::WorkerRequest,
     state::ConfigState,
 };
 use tempdir::TempDir;
@@ -54,7 +53,7 @@ pub enum ConnectorError {
     #[error("failed to create Sōzu client, {0}")]
     CreateClient(sozu_client::Error),
     #[error("failed to canonicalize path to command socket, {0}")]
-    CanonicalizeSocket(sozu_client::config::Error),
+    CanonicalizeSocket(Box<sozu_client::config::Error>),
     #[error("failed to create pulsar client, {0}")]
     CreatePulsarClient(pulsar::Error),
     #[error("failed to create consumer, {0}")]
@@ -98,7 +97,7 @@ pub enum BatchingState {
     ///
     /// If the payload option is None, it means the stream of messages has ended,
     /// which is normal behaviour
-    Receiving(Option<Message<RequestMessage>>),
+    Receiving(Option<Box<Message<RequestMessage>>>),
     /// Tick has been reached, the batch should be sent
     Ticked,
     /// Waiting for the stream to be connected, once it will be connected using
@@ -174,7 +173,7 @@ impl PulsarConnector {
         let mut opts = ConnectionProperties::from(&*sozu_config);
         if opts.socket.is_relative() {
             opts.socket = canonicalize_command_socket(&config.sozu.configuration, &sozu_config)
-                .map_err(ConnectorError::CanonicalizeSocket)?;
+                .map_err(|error| ConnectorError::CanonicalizeSocket(Box::new(error)))?;
         }
 
         let client = Client::try_new(opts)
@@ -243,7 +242,9 @@ impl PulsarConnector {
     pub fn should_send_batch(&self) -> bool {
         (matches!(self.batching_state, BatchingState::Ticked)
             && self.last_sent_idx != self.requests_sent)
-            || self.requests_sent % self.config.sozu.batch.max_requests == 0
+            || self
+                .requests_sent
+                .is_multiple_of(self.config.sozu.batch.max_requests)
             || self.current_batch_size >= self.config.sozu.batch.max_size
     }
 
@@ -254,7 +255,7 @@ impl PulsarConnector {
     ) -> Result<(), ConnectorError> {
         if let Some(request_type) = &request.request_type {
             let request_kind = format_request_type(request_type);
-            REQUEST_EMITTED.with_label_values(&[&request_kind]).inc();
+            REQUEST_EMITTED.with_label_values(&[request_kind]).inc();
         }
 
         let worker_request = WorkerRequest {
@@ -271,7 +272,7 @@ impl PulsarConnector {
             .await
             .map_err(ConnectorError::Write)?;
 
-        self.current_batch_size += (payload.as_bytes().len() + 2) as u64;
+        self.current_batch_size += (payload.len() + 2) as u64;
         Ok(())
     }
 
@@ -289,7 +290,7 @@ impl PulsarConnector {
         let request_type = RequestType::LoadState(self.path.to_string_lossy().to_string());
 
         let request_kind = format_request_type(&request_type);
-        REQUEST_EMITTED.with_label_values(&[&request_kind]).inc();
+        REQUEST_EMITTED.with_label_values(&[request_kind]).inc();
 
         self.client
             .send(request_type)
@@ -334,7 +335,9 @@ impl PulsarConnector {
             // -----------------------------------------------------------------
             // try receiving pulsar messages
             self.batching_state = tokio::select! {
-                r = self.consumer.try_next() => BatchingState::Receiving(r.map_err(ConnectorError::Consume)?),
+                r = self.consumer.try_next() => BatchingState::Receiving(
+                    r.map_err(ConnectorError::Consume)?.map(Box::new)
+                ),
                 _ = sleep_until(self.instant) => BatchingState::Ticked,
             };
 
