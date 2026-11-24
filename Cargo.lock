@@ -2712,9 +2712,9 @@ dependencies = [
 
 [[package]]
 name = "sozu-client"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed0d9fb5fff7cae02e011f8f28be742329639a3280461027326d2187f0d27ca7"
+checksum = "121e2acb5117712c7bc7388788da97e7fc4d7cc82d6213aabf5807603644f589"
 dependencies = [
  "async-trait",
  "bb8",
@@ -2762,7 +2762,7 @@ dependencies = [
 
 [[package]]
 name = "sozu-pulsar-connector"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "axum",
  "clap",
