@@ -9,7 +9,7 @@ It subscribes to a pulsar topic, consumes Sōzu
 batches them in a file, and send them to the Sōzu main process for execution.
 
 The current branch targets Sōzu 2.3.7 with `sozu-command-lib` 2.3.7 and
-`sozu-client` 0.7.0, and requires Rust 1.95.0 or newer.
+`sozu-client` 0.7.1, and requires Rust 1.95.0 or newer.
 
 ### Batching requests
 
