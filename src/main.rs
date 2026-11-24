@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 //! # Sozu pulsar connector
 //!
 //! This application retrieve requests from a pulsar topics and forward them to

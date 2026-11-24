@@ -5,8 +5,11 @@ This little library provides a connector between
 and [Sōzu](https://github.com/sozu-proxy/sozu), a reverse proxy.
 
 It subscribes to a pulsar topic, consumes Sōzu
-[Request](https://docs.rs/sozu-command-lib/0.14.3/sozu_command_lib/proto/command/struct.Request.html)s,
+[Request](https://docs.rs/sozu-command-lib/2.3.7/sozu_command_lib/proto/command/struct.Request.html)s,
 batches them in a file, and send them to the Sōzu main process for execution.
+
+The current branch targets Sōzu 2.3.7 with `sozu-command-lib` 2.3.7 and
+`sozu-client` 0.7.0, and requires Rust 1.95.0 or newer.
 
 ### Batching requests
 
